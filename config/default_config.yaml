@@ -1,0 +1,80 @@
+# Violin Auto-Playing Default Configuration
+
+camera:
+  device_id: 0
+  resolution:
+    width: 1280
+    height: 720
+  fps: 30
+  flip_horizontal: true  # Mirror mode for intuitive control
+
+detection:
+  min_detection_confidence: 0.7
+  min_tracking_confidence: 0.5
+  max_num_hands: 2
+  model_complexity: 1  # 0=Lite, 1=Full
+
+thresholds:
+  # Pinch detection for bow trigger
+  pinch_epsilon: 0.05
+  pinch_release_epsilon: 0.08  # Hysteresis to prevent flickering
+  
+  # Position zones (normalized Y coordinates)
+  position_zones:
+    first: 
+      min: 0.0
+      max: 0.33
+    second:
+      min: 0.33
+      max: 0.66
+    third:
+      min: 0.66
+      max: 1.0
+  
+  # Finger extension threshold
+  finger_extension_threshold: 0.6
+  
+  # Debounce timing (milliseconds)
+  note_debounce_ms: 50
+  position_debounce_ms: 100
+
+midi:
+  port_name: "ViolinCV"
+  channel: 0
+  velocity: 100
+  # Instrument: 40 = Violin in General MIDI
+  program: 40
+
+violin:
+  # Base MIDI notes for open strings
+  strings:
+    G: 55  # G3
+    D: 62  # D4
+    A: 69  # A4
+    E: 76  # E5
+  
+  # Semitone shifts per position
+  positions:
+    first: 0
+    second: 2
+    third: 4
+  
+  # Semitone shifts per finger count
+  fingers:
+    0: 0   # Open string
+    1: 2   # 1st finger (whole step)
+    2: 4   # 2nd finger
+    3: 6   # 3rd finger
+    4: 8   # 4th finger
+
+database:
+  enabled: true
+  path: "data/performance_logs/sessions.db"
+  log_interval_ms: 100  # Minimum time between log entries
+
+debug:
+  enabled: false
+  show_landmarks: true
+  show_fps: true
+  show_gesture_info: true
+  window_name: "Violin Auto-Playing"
