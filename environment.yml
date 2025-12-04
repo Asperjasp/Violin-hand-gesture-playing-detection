@@ -1,0 +1,34 @@
+# Conda environment for Violin Auto-Playing
+# Create with: conda env create -f environment.yml
+# Activate with: conda activate violin-cv
+
+name: violin-cv
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python version
+  - python=3.11
+  
+  # Core CV dependencies (conda handles C++ bindings)
+  - opencv>=4.8.0
+  - numpy>=1.24.0
+  
+  # Database
+  - sqlalchemy>=2.0.0
+  
+  # Configuration
+  - pyyaml>=6.0
+  - python-dotenv>=1.0.0
+  
+  # Testing
+  - pytest>=7.4.0
+  - pytest-cov>=4.1.0
+  
+  # pip dependencies (not available in conda)
+  - pip
+  - pip:
+    - mediapipe>=0.10.0
+    - python-rtmidi>=1.5.0
+    - mido>=1.3.0

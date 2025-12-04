@@ -2,7 +2,7 @@
 Main entry point for the Violin Auto-Playing application.
 """
 
-import argparse
+import argparse  # User friendly CLI ( Command Line Interface )
 import sys
 from pathlib import Path
 
@@ -60,7 +60,6 @@ def parse_arguments() -> argparse.Namespace:
 
 class ViolinApp:
     """Main application class for Violin Auto-Playing."""
-    
     def __init__(self, config: Config, debug: bool = False, use_db: bool = True):
         """
         Initialize the application.
@@ -70,11 +69,14 @@ class ViolinApp:
             debug: Enable debug mode
             use_db: Enable database logging
         """
+        # Config se usa para el Video Capture
         self.config = config
         self.debug = debug
         self.running = False
         
         # Initialize components
+        # Note lo increible que es que un objeto pueda ettener otros objetos# Un reconocedor de manos y gestos de notas y de midi
+        
         self.hand_detector = HandDetector(config)
         self.gesture_recognizer = GestureRecognizer(config)
         self.note_mapper = NoteMapper(config)
@@ -86,6 +88,8 @@ class ViolinApp:
         # State tracking
         self.current_note = None
         self.is_playing = False
+    
+    
     
     def run(self) -> None:
         """Main application loop."""
