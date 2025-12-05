@@ -180,9 +180,11 @@ class ViolinApp:
         self.current_note_info = None
         self.is_playing = False
         self.last_gestures = {}
-    
-    
-    
+        
+        # Debouncing - prevent rapid note changes
+        self.last_note_change_time = 0
+        self.note_debounce_ms = config.thresholds.note_debounce_ms
+        self.pending_note = None
     def run(self) -> None:
         """Main application loop."""
         # Determine video source
@@ -289,12 +291,16 @@ class ViolinApp:
     
     def _process_gestures(self, gestures: dict) -> None:
         """Process recognized gestures and generate MIDI output."""
+        import time as time_module
+        
         # Extract gesture information
         bow_active = gestures.get("bow_active", False)
         string_selected = gestures.get("string", None)
         position = gestures.get("position", 1)
         finger_count = gestures.get("finger_count", 0)
         pitch_offset = gestures.get("pitch_offset", 0)
+        
+        current_time_ms = time_module.time() * 1000
         
         if bow_active and string_selected:
             # Calculate MIDI note
@@ -313,11 +319,16 @@ class ViolinApp:
                 pitch_offset=pitch_offset
             )
             
+            # Debounce: only change note if enough time has passed
             if note != self.current_note:
-                # Stop previous note
-                self._stop_note()
-                # Play new note
-                self._play_note(note, gestures)
+                time_since_last_change = current_time_ms - self.last_note_change_time
+                
+                if time_since_last_change >= self.note_debounce_ms:
+                    # Enough time passed, change note
+                    self._stop_note()
+                    self._play_note(note, gestures)
+                    self.last_note_change_time = current_time_ms
+                # else: ignore rapid changes (debounce)
         else:
             self._stop_note()
     
