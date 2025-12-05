@@ -45,6 +45,10 @@ The idea for this project is to develop a computer vision application capable of
 
 ---
 
+## Orchestration 🖱️
+
+
+
 ## 🖐️ Hand Gesture Notation
 
 For this purpose, we have come up with the following notation:
