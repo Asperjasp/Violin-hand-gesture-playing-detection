@@ -75,3 +75,6 @@ coverage.xml
 
 # mypy
 .mypy_cache/
+
+# My Videos
+WIN_*
