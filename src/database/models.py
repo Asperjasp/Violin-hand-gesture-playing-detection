@@ -73,7 +73,7 @@ class Metric(Base):
     metric_type = Column(String(50), nullable=False)
     value = Column(Float, nullable=False)
     recorded_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    metadata = Column(String(500), nullable=True)  # JSON string for extra data
+    extra_data = Column(String(500), nullable=True)  # JSON string for extra data
     
     # Relationship
     session = relationship("Session", back_populates="metrics")

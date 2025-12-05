@@ -1,18 +1,27 @@
 """
 Main entry point for the Violin Auto-Playing application.
+
+Ejecutar:
+    python -m src.main --debug          # Con visualización
+    python -m src.main --no-midi        # Sin MIDI (solo visual)
+    python -m src.main --calibrate      # Calibrar posiciones
 """
 
 import argparse  # User friendly CLI ( Command Line Interface )
 import sys
+import time
 from pathlib import Path
 
 import cv2
 
 from src.utils.config import Config
+from src.utils.helpers import FPSCounter
 from src.vision.hand_detector import HandDetector
 from src.vision.gesture_recognizer import GestureRecognizer
+from src.vision.visualizer import ViolinVisualizer, HandVisualizerOverlay
 from src.music.midi_controller import MIDIController
 from src.music.note_mapper import NoteMapper
+from src.music.audio_player import AudioPlayer
 from src.database.logger import PerformanceLogger
 
 
@@ -55,12 +64,55 @@ def parse_arguments() -> argparse.Namespace:
         help="Specify MIDI output port name"
     )
     
+    parser.add_argument(
+        "--no-midi",
+        action="store_true",
+        help="Disable MIDI output (visual only mode)"
+    )
+    
+    parser.add_argument(
+        "--audio",
+        action="store_true",
+        help="Enable direct audio output (no external MIDI synth needed)"
+    )
+    
+    parser.add_argument(
+        "--no-visualizer",
+        action="store_true",
+        help="Disable violin visualizer overlay"
+    )
+    
+    parser.add_argument(
+        "--camera",
+        type=int,
+        default=0,
+        help="Camera device index (default: 0)"
+    )
+    
+    parser.add_argument(
+        "--video",
+        type=str,
+        default=None,
+        help="Use video file instead of camera (for testing)"
+    )
+    
     return parser.parse_args()
 
 
 class ViolinApp:
     """Main application class for Violin Auto-Playing."""
-    def __init__(self, config: Config, debug: bool = False, use_db: bool = True):
+    
+    def __init__(
+        self,
+        config: Config,
+        debug: bool = False,
+        use_db: bool = True,
+        use_midi: bool = True,
+        use_audio: bool = False,
+        use_visualizer: bool = True,
+        camera_index: int = 0,
+        video_source: str = None
+    ):
         """
         Initialize the application.
         
@@ -68,38 +120,95 @@ class ViolinApp:
             config: Application configuration
             debug: Enable debug mode
             use_db: Enable database logging
+            use_midi: Enable MIDI output
+            use_audio: Enable direct audio output (pygame)
+            use_visualizer: Enable violin visualizer
+            camera_index: Camera device index
+            video_source: Path to video file (overrides camera)
         """
-        # Config se usa para el Video Capture
         self.config = config
         self.debug = debug
         self.running = False
+        self.use_midi = use_midi
+        self.use_audio = use_audio
+        self.use_visualizer = use_visualizer
+        self.camera_index = camera_index
+        self.video_source = video_source
         
-        # Initialize components
-        # Note lo increible que es que un objeto pueda ettener otros objetos# Un reconocedor de manos y gestos de notas y de midi
-        
+        # Initialize core components
         self.hand_detector = HandDetector(config)
         self.gesture_recognizer = GestureRecognizer(config)
         self.note_mapper = NoteMapper(config)
-        self.midi_controller = MIDIController(config)
+        
+        # MIDI controller (optional)
+        if use_midi:
+            try:
+                self.midi_controller = MIDIController(config)
+            except Exception as e:
+                print(f"⚠️ MIDI disabled: {e}")
+                self.midi_controller = None
+                self.use_midi = False
+        else:
+            self.midi_controller = None
+        
+        # Audio player (optional - direct sound without external MIDI)
+        if use_audio:
+            self.audio_player = AudioPlayer()
+        else:
+            self.audio_player = None
+        
+        # Visualizers
+        if use_visualizer:
+            self.violin_visualizer = ViolinVisualizer(
+                width=300,
+                height=400,
+                position=(20, 20)
+            )
+            self.hand_overlay = HandVisualizerOverlay()
+        else:
+            self.violin_visualizer = None
+            self.hand_overlay = None
         
         # Database logger (optional)
         self.logger = PerformanceLogger(config) if use_db else None
         
+        # FPS counter
+        self.fps_counter = FPSCounter()
+        
         # State tracking
         self.current_note = None
+        self.current_note_info = None
         self.is_playing = False
+        self.last_gestures = {}
     
     
     
     def run(self) -> None:
         """Main application loop."""
-        cap = cv2.VideoCapture(self.config.camera.device_id)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.camera.resolution["width"])
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.camera.resolution["height"])
-        cap.set(cv2.CAP_PROP_FPS, self.config.camera.fps)
+        # Determine video source
+        if self.video_source:
+            source = self.video_source
+            print(f"📹 Using video file: {source}")
+        else:
+            source = self.camera_index
+            print(f"📷 Using camera index: {source}")
+        
+        cap = cv2.VideoCapture(source)
+        
+        # Only set camera properties if using camera (not video file)
+        if not self.video_source:
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.camera.resolution["width"])
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.camera.resolution["height"])
+            cap.set(cv2.CAP_PROP_FPS, self.config.camera.fps)
         
         if not cap.isOpened():
-            print("Error: Could not open camera")
+            print(f"❌ Error: Could not open video source: {source}")
+            if not self.video_source:
+                print("\n💡 Tips:")
+                print("   - En WSL: La cámara de Windows no está disponible directamente")
+                print("   - Prueba ejecutar en Windows: py -m src.main --debug")
+                print("   - O usa un video: python -m src.main --video test.mp4")
+                print("   - Prueba otra cámara: python -m src.main --camera 1")
             sys.exit(1)
         
         self.running = True
@@ -108,6 +217,12 @@ class ViolinApp:
         if self.logger:
             self.logger.start_session()
         
+        print("\n🎻 Controles:")
+        print("   q - Salir")
+        print("   v - Toggle visualizador")
+        print("   d - Toggle debug landmarks")
+        print("   r - Reiniciar sesión\n")
+       
         try:
             while self.running:
                 ret, frame = cap.read()
@@ -125,19 +240,49 @@ class ViolinApp:
                 # Process gestures
                 if hands:
                     gestures = self.gesture_recognizer.recognize(hands)
+                    self.last_gestures = gestures
                     self._process_gestures(gestures)
                 else:
+                    self.last_gestures = {}
                     self._stop_note()
                 
-                # Debug visualization
-                if self.debug:
-                    frame = self._draw_debug_info(frame, hands)
-                    cv2.imshow(self.config.debug.window_name, frame)
+                # === VISUALIZACIÓN ===
+                
+                # 1. Dibujar landmarks de manos (debug)
+                if self.debug and hands:
+                    frame = self.hand_detector.draw_landmarks(frame, hands)
+                
+                # 2. Dibujar overlay de información de manos
+                if self.hand_overlay and hands:
+                    frame = self.hand_overlay.render(frame, hands, self.last_gestures)
+                
+                # 3. Dibujar visualizador del violín
+                if self.violin_visualizer:
+                    self.violin_visualizer.update_state(
+                        self.last_gestures,
+                        self.current_note_info
+                    )
+                    frame = self.violin_visualizer.render(frame)
+                
+                # 4. Dibujar FPS y estado
+                frame = self._draw_status_bar(frame)
+                
+                # Mostrar frame
+                cv2.imshow(self.config.debug.window_name, frame)
                 
                 # Handle key press
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
                     self.running = False
+                elif key == ord('v'):
+                    # Toggle visualizer
+                    if self.violin_visualizer:
+                        self.use_visualizer = not self.use_visualizer
+                        print(f"Visualizer: {'ON' if self.use_visualizer else 'OFF'}")
+                elif key == ord('d'):
+                    # Toggle debug
+                    self.debug = not self.debug
+                    print(f"Debug landmarks: {'ON' if self.debug else 'OFF'}")
         
         finally:
             self._cleanup(cap)
@@ -160,6 +305,14 @@ class ViolinApp:
                 pitch_offset=pitch_offset
             )
             
+            # Get note info for visualizer
+            self.current_note_info = self.note_mapper.get_note_info(
+                string=string_selected,
+                position=position,
+                finger_count=finger_count,
+                pitch_offset=pitch_offset
+            )
+            
             if note != self.current_note:
                 # Stop previous note
                 self._stop_note()
@@ -171,7 +324,10 @@ class ViolinApp:
     def _play_note(self, note: int, gestures: dict) -> None:
         """Play a MIDI note."""
         if not self.is_playing or note != self.current_note:
-            self.midi_controller.note_on(note)
+            if self.use_midi and self.midi_controller:
+                self.midi_controller.note_on(note)
+            if self.use_audio and self.audio_player:
+                self.audio_player.note_on(note)
             self.current_note = note
             self.is_playing = True
             
@@ -182,9 +338,60 @@ class ViolinApp:
     def _stop_note(self) -> None:
         """Stop the current note."""
         if self.is_playing and self.current_note is not None:
-            self.midi_controller.note_off(self.current_note)
+            if self.use_midi and self.midi_controller:
+                self.midi_controller.note_off(self.current_note)
+            if self.use_audio and self.audio_player:
+                self.audio_player.note_off(self.current_note)
             self.current_note = None
+            self.current_note_info = None
             self.is_playing = False
+    
+    def _draw_status_bar(self, frame) -> any:
+        """Draw status bar at the bottom of the frame."""
+        h, w = frame.shape[:2]
+        
+        # FPS
+        fps = self.fps_counter.tick()
+        
+        # Status bar background
+        cv2.rectangle(frame, (0, h - 35), (w, h), (30, 30, 30), -1)
+        
+        # FPS
+        cv2.putText(
+            frame, f"FPS: {fps:.1f}",
+            (10, h - 10),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+            (0, 255, 0), 1
+        )
+        
+        # Current note
+        note_text = f"Note: {self.current_note_info.note_name if self.current_note_info else '---'}"
+        cv2.putText(
+            frame, note_text,
+            (120, h - 10),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+            (0, 255, 255) if self.is_playing else (128, 128, 128), 1
+        )
+        
+        # MIDI status
+        midi_text = "MIDI: ON" if self.use_midi else "MIDI: OFF"
+        midi_color = (0, 255, 0) if self.use_midi else (0, 0, 255)
+        cv2.putText(
+            frame, midi_text,
+            (280, h - 10),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+            midi_color, 1
+        )
+        
+        # Controls hint
+        cv2.putText(
+            frame, "Q:Exit | V:Visualizer | D:Debug",
+            (w - 280, h - 10),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.4,
+            (150, 150, 150), 1
+        )
+        
+        return frame
     
     def _draw_debug_info(self, frame, hands) -> any:
         """Draw debug information on the frame."""
@@ -206,12 +413,17 @@ class ViolinApp:
         self._stop_note()
         cap.release()
         cv2.destroyAllWindows()
-        self.midi_controller.close()
+        
+        if self.midi_controller:
+            self.midi_controller.close()
+        
+        if self.audio_player:
+            self.audio_player.close()
         
         if self.logger:
             self.logger.end_session()
         
-        print("Application closed.")
+        print("\n✅ Application closed.")
 
 
 def main():
@@ -233,11 +445,20 @@ def main():
         from src.vision.calibration import run_calibration
         run_calibration(config)
     
+    print("\n" + "🎻"*20)
+    print("   VIOLIN AUTO-PLAYING")
+    print("🎻"*20 + "\n")
+    
     # Start application
     app = ViolinApp(
         config=config,
         debug=args.debug or config.debug.enabled,
-        use_db=not args.no_db and config.database.enabled
+        use_db=not args.no_db and config.database.enabled,
+        use_midi=not args.no_midi,
+        use_audio=args.audio,
+        use_visualizer=not args.no_visualizer,
+        camera_index=args.camera,
+        video_source=args.video
     )
     
     app.run()
