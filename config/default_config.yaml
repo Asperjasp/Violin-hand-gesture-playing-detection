@@ -16,8 +16,8 @@ detection:
 
 thresholds:
   # Pinch detection for bow trigger
-  pinch_epsilon: 0.05
-  pinch_release_epsilon: 0.08  # Hysteresis to prevent flickering
+  pinch_epsilon: 0.08
+  pinch_release_epsilon: 0.12  # Hysteresis to prevent flickering
   
   # Position zones (normalized Y coordinates)
   position_zones:
