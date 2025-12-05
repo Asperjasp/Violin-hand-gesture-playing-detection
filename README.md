@@ -89,6 +89,96 @@ Where:
 
 ---
 
+## 🔊 Audio Synthesis
+
+The application includes a built-in audio synthesizer for testing without external MIDI software. Use the `--audio` flag to enable direct sound output.
+
+### How Sound is Generated
+
+The `AudioPlayer` class (`src/music/audio_player.py`) generates violin-like tones using **additive synthesis**:
+
+```
+MIDI Note → Frequency (Hz) → Waveform Generation → ADSR Envelope → Speaker
+```
+
+### 1. Harmonic Series (Timbre)
+
+Real violin strings produce not just a fundamental frequency, but a series of **harmonics** (overtones). Our synthesizer mimics this:
+
+```python
+harmonics = [
+    (1, 1.0),    # Fundamental frequency (strongest)
+    (2, 0.6),    # 2nd harmonic (octave above)
+    (3, 0.4),    # 3rd harmonic
+    (4, 0.25),   # 4th harmonic
+    (5, 0.15),   # 5th harmonic
+    ...
+]
+```
+
+Each harmonic is a sine wave at a multiple of the fundamental frequency:
+
+$$f_n = n \times f_0$$
+
+Where $f_0$ is the fundamental frequency and $n$ is the harmonic number.
+
+### 2. ADSR Envelope (Note Shape)
+
+To prevent abrupt "clicks" and give notes a natural shape, we apply an **ADSR envelope**:
+
+```
+Volume
+   │
+1.0├──╮
+   │   ╲
+0.8├────╲────────────────╮
+   │                      ╲
+0.0├──────────────────────────
+   └─────┬──┬──────────┬──┬───→ Time
+         A  D    S      R
+
+A = Attack  (0.08s) - Note starts, volume rises
+D = Decay   (0.10s) - Initial peak fades to sustain
+S = Sustain (0.80)  - Steady playing level
+R = Release (0.15s) - Note ends, volume fades out
+```
+
+### 3. Vibrato (Expression)
+
+A subtle pitch oscillation adds realism:
+
+$$vibrato = 1.0 + 0.003 \times \sin(2\pi \times 5.5 \times t)$$
+
+This creates a ±0.3% pitch variation at 5.5 Hz (typical violin vibrato rate).
+
+### 4. Note Debouncing
+
+To prevent rapid note flickering from hand tremors, a **debounce** filter is applied:
+
+- Notes cannot change faster than every **150ms**
+- Position changes are filtered at **200ms**
+
+This prevents the "crushed fly" sound effect from rapid start/stop cycles.
+
+### Limitations vs. Real Violin
+
+| Aspect | Our Synth | Real Violin |
+|--------|-----------|-------------|
+| Sound Source | Pure sine waves | Bow friction (stick-slip) |
+| Harmonics | Static ratios | Dynamic with bow pressure |
+| Resonance | None | Wood body resonance |
+| Noise | Clean signal | Rosin, bow hair texture |
+| Expression | Fixed vibrato | Player-controlled |
+
+### For Better Sound Quality
+
+For professional-quality violin sound, connect the MIDI output to:
+- **DAW Software**: Ableton, FL Studio, Logic Pro
+- **VST Plugins**: SWAM Violin, Kontakt, Spitfire Audio
+- **Hardware Synths**: Roland, Yamaha sound modules
+
+---
+
 ## 📁 Project Structure
 
 ```
@@ -213,6 +303,26 @@ python src/main.py --calibrate
 | `--debug` | Enable debug visualization |
 | `--no-db` | Disable database logging |
 | `--midi-port <name>` | Specify MIDI output port |
+| `--audio` | Enable direct audio output (no external synth needed) |
+| `--no-midi` | Disable MIDI output (visual only mode) |
+| `--video <file>` | Use video file instead of camera |
+| `--camera <index>` | Specify camera device index |
+
+### Examples
+
+```bash
+# Basic usage with camera
+python -m src.main
+
+# Test with video file and audio output
+python -m src.main --video recording.mp4 --audio --debug
+
+# Debug mode with direct audio (no external MIDI)
+python -m src.main --audio --no-midi --debug
+
+# Connect to external synthesizer
+python -m src.main --midi-port "FluidSynth"
+```
 
 ---
 
