@@ -34,9 +34,9 @@ thresholds:
   # Finger extension threshold
   finger_extension_threshold: 0.6
   
-  # Debounce timing (milliseconds)
-  note_debounce_ms: 50
-  position_debounce_ms: 100
+  # Debounce timing (milliseconds) - prevents flickering
+  note_debounce_ms: 150
+  position_debounce_ms: 200
 
 midi:
   port_name: "ViolinCV"
