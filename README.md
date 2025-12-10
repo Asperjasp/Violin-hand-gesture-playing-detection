@@ -16,9 +16,11 @@ A computer vision application that uses **hand gestures** to play the **violin**
 - [Features](#features)
 - [Hand Gesture Notation](#hand-gesture-notation)
 - [MIDI Mapping](#midi-mapping)
-- [Project Structure](#project-structure)
-- [Installation](#installation)
-- [Usage](#usage)
+- [Audio Synthesis](#-audio-synthesis)
+- [Project Structure](#-project-structure)
+- [System Architecture](#-system-architecture)
+- [Installation](#-installation)
+- [Usage](#-usage)
 - [Configuration](#configuration)
 - [Database Integration](#database-integration)
 - [Development Roadmap](#development-roadmap)
@@ -197,12 +199,15 @@ Violin-Auto-Playing/
 │   │   ├── __init__.py
 │   │   ├── hand_detector.py       # MediaPipe hand detection wrapper
 │   │   ├── gesture_recognizer.py  # Gesture interpretation logic
+│   │   ├── visualizer.py          # Visual overlays and violin display
 │   │   └── calibration.py         # Position calibration utilities
 │   │
 │   ├── music/
 │   │   ├── __init__.py
 │   │   ├── midi_controller.py     # MIDI output handling
 │   │   ├── note_mapper.py         # Gesture to note mapping
+│   │   ├── audio_player.py        # pygame-based audio synthesis
+│   │   ├── fluidsynth_player.py   # FluidSynth realistic violin sounds
 │   │   └── violin_model.py        # Violin-specific music logic
 │   │
 │   ├── database/
@@ -236,6 +241,128 @@ Violin-Auto-Playing/
     ├── api_reference.md           # API documentation
     └── user_guide.md              # User manual
 ```
+
+---
+
+## 🏗️ System Architecture
+
+### Data Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         ViolinApp (main.py)                         │
+│                      The Orchestra Conductor 🎼                      │
+│                                                                      │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐           │
+│  │    Video     │ →  │    Hand      │ →  │   Gesture    │           │
+│  │    Input     │    │   Detector   │    │  Recognizer  │           │
+│  │  (camera/    │    │  (MediaPipe) │    │   (rules)    │           │
+│  │   video)     │    │              │    │              │           │
+│  └──────────────┘    └──────────────┘    └──────────────┘           │
+│         │                   │                   │                    │
+│         │                   ↓                   ↓                    │
+│         │           ┌──────────────┐    ┌──────────────┐            │
+│         │           │  Visualizer  │ ←  │ Note Mapper  │            │
+│         │           │   (overlay)  │    │ (MIDI calc)  │            │
+│         │           └──────────────┘    └──────────────┘            │
+│         │                   │                   │                    │
+│         ↓                   ↓                   ↓                    │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                    Display Window (OpenCV)                    │   │
+│  │   Video + Hand Skeleton + Violin Overlay + Note Information   │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                              │                                       │
+│                              ↓                                       │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                    Audio Output Options                       │   │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐              │   │
+│  │  │  pygame    │  │ FluidSynth │  │    MIDI    │              │   │
+│  │  │  (synth)   │  │ (realistic)│  │ (external) │              │   │
+│  │  │  --audio   │  │ --realistic│  │  (default) │              │   │
+│  │  └────────────┘  └────────────┘  └────────────┘              │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Component Descriptions
+
+#### 1. **`src/main.py`** - The Orchestra Conductor 🎼
+
+The main application entry point that orchestrates all components:
+- Initializes video capture (camera or video file)
+- Creates instances of all detection and playback components
+- Runs the main loop: capture → detect → recognize → play → display
+- Handles keyboard controls (q=quit, v=visualizer, d=debug, r=reset)
+
+#### 2. **`src/vision/hand_detector.py`** - The Eyes 👁️
+
+Uses **MediaPipe Hands** for real-time hand tracking:
+- Detects up to 2 hands simultaneously (left + right)
+- Returns 21 landmark points per hand:
+  ```
+  0: Wrist
+  1-4: Thumb (CMC, MCP, IP, TIP)
+  5-8: Index finger
+  9-12: Middle finger
+  13-16: Ring finger
+  17-20: Pinky finger
+  ```
+- Identifies hand laterality (Left/Right)
+- Draws skeleton overlay on video frame
+
+#### 3. **`src/vision/gesture_recognizer.py`** - The Brain 🧠
+
+Interprets hand landmarks as musical gestures:
+
+| Gesture | Detection Method | Musical Action |
+|---------|------------------|----------------|
+| **Pinch** | Distance(thumb_tip, index_tip) < ε | Bow ON (start note) |
+| **Release** | Distance > ε | Bow OFF (stop note) |
+| **Finger curl** | Count of curled fingers | Pitch selection |
+| **Position** | Thumb Y coordinate zones | 1st/2nd/3rd position |
+
+#### 4. **`src/vision/visualizer.py`** - The Visual Display 🖼️
+
+Renders visual overlays on the video frame:
+- **Virtual violin**: 4 strings (E, A, D, G) with finger positions
+- **Current note**: Large display of the active note (e.g., "A4")
+- **Bow indicator**: Green when bowing, gray when stopped
+- **Hand overlay**: Colored landmarks showing gesture state
+- **Debug info**: FPS, raw coordinates, detection confidence
+
+#### 5. **`src/music/note_mapper.py`** - The Translator 🎵
+
+Converts gesture data into MIDI note numbers:
+```python
+def get_note(string, position, fingers, pitch_adjust) -> int:
+    base = OPEN_STRINGS[string]      # G=55, D=62, A=69, E=76
+    pos_shift = position * 2          # 0, 2, or 4 semitones
+    finger_shift = fingers * 2        # 0, 2, 4, 6, or 8
+    return base + pos_shift + finger_shift + pitch_adjust
+```
+
+#### 6. **`src/music/audio_player.py`** - Simple Synthesizer 🔉
+
+pygame-based audio synthesis for quick testing:
+- Generates sine waves with harmonic series
+- Applies ADSR envelope for natural note shape
+- Adds vibrato for expressiveness
+- Pre-caches all violin range notes for instant playback
+
+#### 7. **`src/music/fluidsynth_player.py`** - Realistic Sound Engine 🎻
+
+Professional-quality violin sounds using FluidSynth:
+- Uses SoundFont files (FluidR3_GM.sf2) for sampled instruments
+- Sends MIDI commands to FluidSynth subprocess
+- Supports General MIDI instrument selection
+- Produces authentic violin timbre
+
+#### 8. **`src/music/midi_controller.py`** - External Output 🎹
+
+MIDI output for connecting to external software/hardware:
+- Works with DAWs (Ableton, FL Studio, Logic)
+- Connects to VST plugins for professional sounds
+- Compatible with hardware synthesizers
 
 ---
 
