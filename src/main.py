@@ -73,7 +73,13 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--audio",
         action="store_true",
-        help="Enable direct audio output (no external MIDI synth needed)"
+        help="Enable direct audio output (simple sine synth)"
+    )
+    
+    parser.add_argument(
+        "--realistic",
+        action="store_true",
+        help="Enable realistic violin sound via FluidSynth (recommended)"
     )
     
     parser.add_argument(
@@ -109,9 +115,10 @@ class ViolinApp:
         use_db: bool = True,
         use_midi: bool = True,
         use_audio: bool = False,
+        use_realistic: bool = False,
         use_visualizer: bool = True,
         camera_index: int = 0,
-        video_source: str = None
+        video_source: str | None = None
     ):
         """
         Initialize the application.
@@ -121,7 +128,8 @@ class ViolinApp:
             debug: Enable debug mode
             use_db: Enable database logging
             use_midi: Enable MIDI output
-            use_audio: Enable direct audio output (pygame)
+            use_audio: Enable direct audio output (pygame sine synth)
+            use_realistic: Enable realistic audio via FluidSynth
             use_visualizer: Enable violin visualizer
             camera_index: Camera device index
             video_source: Path to video file (overrides camera)
@@ -131,6 +139,7 @@ class ViolinApp:
         self.running = False
         self.use_midi = use_midi
         self.use_audio = use_audio
+        self.use_realistic = use_realistic
         self.use_visualizer = use_visualizer
         self.camera_index = camera_index
         self.video_source = video_source
@@ -151,11 +160,18 @@ class ViolinApp:
         else:
             self.midi_controller = None
         
-        # Audio player (optional - direct sound without external MIDI)
-        if use_audio:
+        # Audio player (optional - simple sine synth)
+        if use_audio and not use_realistic:
             self.audio_player = AudioPlayer()
         else:
             self.audio_player = None
+        
+        # Realistic audio player (FluidSynth - sounds like real violin)
+        if use_realistic:
+            from src.music.fluidsynth_player import FluidSynthPlayer
+            self.realistic_player = FluidSynthPlayer(instrument='violin', debug=debug)
+        else:
+            self.realistic_player = None
         
         # Visualizers
         if use_visualizer:
@@ -224,7 +240,8 @@ class ViolinApp:
         print("   v - Toggle visualizador")
         print("   d - Toggle debug landmarks")
         print("   r - Reiniciar sesión\n")
-       
+        
+        frame_count = 0
         try:
             while self.running:
                 ret, frame = cap.read()
@@ -232,6 +249,11 @@ class ViolinApp:
                     print("Error: Could not read frame")
                     break
                 
+                frame_count += 1
+                if frame_count == 1:
+                    print(f"📷 First frame read: {frame.shape}")
+                elif frame_count % 100 == 0:
+                    print(f"📷 Frame {frame_count}...")
                 # Flip frame for mirror effect
                 if self.config.camera.flip_horizontal:
                     frame = cv2.flip(frame, 1)
@@ -339,6 +361,8 @@ class ViolinApp:
                 self.midi_controller.note_on(note)
             if self.use_audio and self.audio_player:
                 self.audio_player.note_on(note)
+            if self.use_realistic and self.realistic_player:
+                self.realistic_player.note_on(note)
             self.current_note = note
             self.is_playing = True
             
@@ -353,11 +377,13 @@ class ViolinApp:
                 self.midi_controller.note_off(self.current_note)
             if self.use_audio and self.audio_player:
                 self.audio_player.note_off(self.current_note)
+            if self.use_realistic and self.realistic_player:
+                self.realistic_player.note_off(self.current_note)
             self.current_note = None
             self.current_note_info = None
             self.is_playing = False
     
-    def _draw_status_bar(self, frame) -> any:
+    def _draw_status_bar(self, frame):
         """Draw status bar at the bottom of the frame."""
         h, w = frame.shape[:2]
         
@@ -404,7 +430,7 @@ class ViolinApp:
         
         return frame
     
-    def _draw_debug_info(self, frame, hands) -> any:
+    def _draw_debug_info(self, frame, hands):
         """Draw debug information on the frame."""
         # Draw hand landmarks
         if hands:
@@ -430,6 +456,9 @@ class ViolinApp:
         
         if self.audio_player:
             self.audio_player.close()
+        
+        if self.realistic_player:
+            self.realistic_player.close()
         
         if self.logger:
             self.logger.end_session()
@@ -467,6 +496,7 @@ def main():
         use_db=not args.no_db and config.database.enabled,
         use_midi=not args.no_midi,
         use_audio=args.audio,
+        use_realistic=args.realistic,
         use_visualizer=not args.no_visualizer,
         camera_index=args.camera,
         video_source=args.video
