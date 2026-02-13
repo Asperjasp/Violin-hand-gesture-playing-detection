@@ -46,7 +46,7 @@ class ThresholdsConfig:
 @dataclass
 class MIDIConfig:
     """MIDI configuration."""
-    port_name: str = "ViolinCV"
+    port_name: str = "Violin-Hand"
     channel: int = 0
     velocity: int = 100
     program: int = 40  # Violin in General MIDI

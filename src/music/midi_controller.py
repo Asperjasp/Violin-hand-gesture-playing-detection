@@ -8,7 +8,6 @@ from rtmidi.midiconstants import NOTE_ON, NOTE_OFF, PROGRAM_CHANGE
 
 from src.utils.config import Config
 
-
 class MIDIController:
     """
     Handles MIDI output for the application.
@@ -29,7 +28,7 @@ class MIDIController:
         self.velocity = config.midi.velocity
         self.port_name = config.midi.port_name
         
-        # Initialize MIDI output
+        # Initialize MIDI output Object
         self.midi_out = rtmidi.MidiOut()
         self._setup_port()
         
